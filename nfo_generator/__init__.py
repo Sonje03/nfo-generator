@@ -8,7 +8,7 @@ without changes.
 
 from __future__ import annotations
 
-__version__ = "1.0.0-beta.2"
+__version__ = "1.0.0-beta.3"
 
 from .core import *       # noqa: F401, F403
 from .nfo import *        # noqa: F401, F403
