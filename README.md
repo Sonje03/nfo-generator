@@ -162,13 +162,13 @@ python NFO_generator.py /path/to/Release.Name.x265-GROUP.mkv
 
 ## Roadmap
 
-Stuff I'd like to add. Each one has an issue — drop a 👍 to vote.
+Stuff I'd like to add. Drop a 👍 on the issue to vote.
 
-- Batch mode: one `.nfo` per file in a folder
-- NFO viewer: drag an existing `.nfo` back in to edit it
-- Custom template editor in the GUI
-- Provider fallback chain when one is unreachable (TMDB → TVDB → AniList)
-- Recent files history
+- [Batch mode](https://github.com/Sonje03/nfo-generator/issues/1) — one `.nfo` per file in a folder
+- [NFO viewer](https://github.com/Sonje03/nfo-generator/issues/2) — drag an existing `.nfo` back in to edit it
+- [Custom template editor](https://github.com/Sonje03/nfo-generator/issues/3) — define your own layout in the GUI
+- [Provider fallback chain](https://github.com/Sonje03/nfo-generator/issues/4) — TMDB → TVDB → AniList when one is unreachable
+- [Recent files history](https://github.com/Sonje03/nfo-generator/issues/5) — quick-access list of the last 10 files / folders
 
 ## Contributing
 
