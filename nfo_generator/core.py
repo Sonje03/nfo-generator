@@ -194,6 +194,7 @@ DEFAULT_USER_CONFIG: dict = {
     "font_family":     "",      # GUI interface font (empty = use theme default)
     "appearance_mode": "Dark",  # "Light" | "Dark" | "System"
     "check_updates_on_startup": True,
+    "include_prereleases":      False,
     "github_repo":     "Sonje03/nfo-generator",
 }
 

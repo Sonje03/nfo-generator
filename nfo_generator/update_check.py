@@ -108,13 +108,8 @@ def _save_cache(payload: dict) -> None:
         pass
 
 
-def _fetch_latest_release(repo: str) -> Optional[dict]:
-    """
-    GET https://api.github.com/repos/{repo}/releases/latest
-
-    Returns the JSON body on success, ``None`` otherwise.
-    """
-    url = f"https://api.github.com/repos/{repo}/releases/latest"
+def _http_get_json(url: str) -> Optional[object]:
+    """GET a JSON endpoint, return parsed body or None on any error."""
     request = urllib.request.Request(
         url,
         headers={
@@ -126,8 +121,39 @@ def _fetch_latest_release(repo: str) -> Optional[dict]:
         with urllib.request.urlopen(request, timeout=_REQUEST_TIMEOUT) as resp:
             return json.load(resp)
     except (urllib.error.URLError, OSError, json.JSONDecodeError) as exc:
-        logger.debug("Update check failed for %s: %s", repo, exc)
+        logger.debug("Update check HTTP failed for %s: %s", url, exc)
         return None
+
+
+def _fetch_latest_release(repo: str, *, include_prereleases: bool = False) -> Optional[dict]:
+    """
+    Return the most recent release of ``repo``.
+
+    When ``include_prereleases`` is False (default), uses the
+    ``/releases/latest`` endpoint which GitHub already filters to skip
+    draft and pre-release entries. When True, fetches the full list and
+    picks the highest version, including beta / rc / alpha tags.
+    """
+    if not include_prereleases:
+        payload = _http_get_json(f"https://api.github.com/repos/{repo}/releases/latest")
+        return payload if isinstance(payload, dict) else None
+
+    releases = _http_get_json(f"https://api.github.com/repos/{repo}/releases")
+    if not isinstance(releases, list) or not releases:
+        return None
+    # Skip drafts but keep pre-releases. Sort by parsed version, falling
+    # back to the API's chronological order when parsing fails.
+    candidates = [r for r in releases if isinstance(r, dict) and not r.get("draft")]
+    if not candidates:
+        return None
+
+    def _key(release):
+        parsed = _parse_version((release.get("tag_name") or "").strip())
+        # parsed = (major, minor, patch, suffix) or None
+        return parsed if parsed is not None else (0, 0, 0, "")
+
+    candidates.sort(key=_key, reverse=True)
+    return candidates[0]
 
 
 def check_for_update_async(
@@ -137,6 +163,7 @@ def check_for_update_async(
     *,
     ui_thread_dispatch: Optional[Callable] = None,
     force: bool = False,
+    include_prereleases: bool = False,
 ) -> None:
     """
     Kick off a background update check.
@@ -159,15 +186,24 @@ def check_for_update_async(
     force
         Skip the 24-hour disk cache. Useful for "Check for updates now"
         menu items.
+    include_prereleases
+        When True, beta / alpha / rc tags are considered. When False
+        (default), only stable releases are returned by GitHub.
     """
     def _run() -> None:
         now = time.time()
         cache = _load_cache()
-        if not force and (now - cache.get("checked_at", 0) < _CACHE_TTL_SECONDS):
+        # Bust the cache when the channel changes — otherwise a user who
+        # opted into pre-releases would still see the stable-channel
+        # cached result for up to 24h.
+        cached_channel = cache.get("prereleases", False)
+        channel_changed = cached_channel != include_prereleases
+        if (not force and not channel_changed
+                and now - cache.get("checked_at", 0) < _CACHE_TTL_SECONDS):
             latest = cache.get("latest_tag") or ""
             url    = cache.get("html_url") or ""
         else:
-            payload = _fetch_latest_release(repo) or {}
+            payload = _fetch_latest_release(repo, include_prereleases=include_prereleases) or {}
             latest  = (payload.get("tag_name") or "").strip()
             url     = (payload.get("html_url") or "").strip()
             if latest:  # only refresh cache on success
@@ -175,6 +211,7 @@ def check_for_update_async(
                     "checked_at": now,
                     "latest_tag": latest,
                     "html_url":   url,
+                    "prereleases": include_prereleases,
                 })
         if latest and _is_newer(latest, current_version):
             if ui_thread_dispatch is not None:

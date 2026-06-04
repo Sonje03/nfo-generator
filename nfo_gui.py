@@ -512,17 +512,18 @@ class NFOApp(CTkDnD):
         # ----------- 1. Tabview --------------------------------------------
         self.tabs = ctk.CTkTabview(self, command=self._on_tab_changed)
         self.tabs.grid(row=1, column=0, sticky="nsew", padx=16, pady=4)
-        for name in ("Release", "Content", "Style", "Output", "Preview"):
+        for name in ("Release", "Content", "Style", "Output", "Preview", "Settings"):
             self.tabs.add(name)
 
         # Most tabs wrap their content in a scrollable frame so long forms
         # still fit; the Preview tab uses a single textbox that scrolls itself.
         for tab_name, builder, scrollable in (
-            ("Release", self._build_release_tab, True),
-            ("Content", self._build_content_tab, True),
-            ("Style",   self._build_style_tab,   True),
-            ("Output",  self._build_output_tab,  True),
-            ("Preview", self._build_preview_tab, False),
+            ("Release",  self._build_release_tab,  True),
+            ("Content",  self._build_content_tab,  True),
+            ("Style",    self._build_style_tab,    True),
+            ("Output",   self._build_output_tab,   True),
+            ("Preview",  self._build_preview_tab,  False),
+            ("Settings", self._build_settings_tab, True),
         ):
             parent = self.tabs.tab(tab_name)
             if scrollable:
@@ -1053,6 +1054,95 @@ class NFOApp(CTkDnD):
                  ".nfo. Otherwise it stays where it is.")
 
     # ------------------------------------------------------------------------
+    # Tab: Settings (updates + future app preferences)
+    # ------------------------------------------------------------------------
+
+    def _build_settings_tab(self, container) -> None:
+        row = 0
+
+        # ---- Updates -------------------------------------------------------
+        self._section_label(container, "Updates", row); row += 1
+
+        self.check_updates_var = ctk.BooleanVar(value=True)
+        ctk.CTkCheckBox(
+            container,
+            text="Check for updates on startup",
+            variable=self.check_updates_var,
+            command=self._persist_config,
+        ).grid(row=row, column=0, sticky="w", padx=4, pady=(0, 4)); row += 1
+
+        self.include_prereleases_var = ctk.BooleanVar(value=False)
+        ctk.CTkCheckBox(
+            container,
+            text="Include pre-releases (beta / rc / alpha)",
+            variable=self.include_prereleases_var,
+            command=self._persist_config,
+        ).grid(row=row, column=0, sticky="w", padx=4, pady=(0, 8)); row += 1
+
+        action_row = ctk.CTkFrame(container, fg_color="transparent")
+        action_row.grid(row=row, column=0, sticky="w", padx=0, pady=(0, 4)); row += 1
+        ctk.CTkButton(
+            action_row, text="Check now", width=110,
+            command=self._check_updates_now,
+        ).grid(row=0, column=0, padx=(4, 8))
+        self.update_status_label = ctk.CTkLabel(
+            action_row, text="", anchor="w",
+            text_color=("gray40", "gray60"),
+            font=ctk.CTkFont(size=11, slant="italic"),
+        )
+        self.update_status_label.grid(row=0, column=1, sticky="w")
+
+        ctk.CTkLabel(
+            container,
+            text="The check is non-blocking and the result is cached for 24h.\n"
+                 "A banner appears at the top of the window if a newer "
+                 "release is available.",
+            anchor="w", justify="left", wraplength=600,
+            text_color=("gray45", "gray55"),
+            font=ctk.CTkFont(size=11),
+        ).grid(row=row, column=0, sticky="w", padx=4, pady=(0, 4)); row += 1
+
+    def _check_updates_now(self) -> None:
+        """Manual update check — bypasses the 24h cache."""
+        self.update_status_label.configure(text="Checking…")
+        repo = self.config.get("github_repo") or "Sonje03/nfo-generator"
+        include_pre = bool(self.include_prereleases_var.get())
+
+        def _no_update_callback():
+            # Reached only when the check completed but no newer release
+            # was found — we get there from a delayed callback below.
+            self.update_status_label.configure(text="You're up to date.")
+
+        def _has_update(latest: str, url: str) -> None:
+            self.update_status_label.configure(
+                text=f"Update available: {latest}",
+            )
+            self._show_update_banner(latest, url)
+
+        try:
+            check_for_update_async(
+                repo=repo,
+                current_version=NFO_GENERATOR_VERSION,
+                on_update=_has_update,
+                ui_thread_dispatch=self.after,
+                force=True,
+                include_prereleases=include_pre,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Manual update check failed: %s", exc)
+            self.update_status_label.configure(text=f"Check failed: {exc}")
+            return
+
+        # The async check fires `on_update` only when a newer version is
+        # available. If nothing fires after a generous 6-second window,
+        # assume we're up to date.
+        self.after(6000, lambda: (
+            self.update_status_label.configure(text="You're up to date.")
+            if self.update_status_label.cget("text") == "Checking…"
+            else None
+        ))
+
+    # ------------------------------------------------------------------------
     # Tab: Preview (live-rendered .nfo)
     # ------------------------------------------------------------------------
 
@@ -1204,12 +1294,14 @@ class NFOApp(CTkDnD):
         if not self.config.get("check_updates_on_startup", True):
             return
         repo = self.config.get("github_repo") or "Sonje03/nfo-generator"
+        include_pre = bool(self.config.get("include_prereleases", False))
         try:
             check_for_update_async(
                 repo=repo,
                 current_version=NFO_GENERATOR_VERSION,
                 on_update=self._show_update_banner,
                 ui_thread_dispatch=self.after,
+                include_prereleases=include_pre,
             )
         except Exception as exc:  # noqa: BLE001
             logger.debug("Skipping update check: %s", exc)
@@ -1367,6 +1459,9 @@ class NFOApp(CTkDnD):
         if saved_mode in ("Light", "Dark", "System"):
             self.appearance_var.set(saved_mode)
             ctk.set_appearance_mode(saved_mode)
+        # Settings tab toggles
+        self.check_updates_var.set(bool(cfg.get("check_updates_on_startup", True)))
+        self.include_prereleases_var.set(bool(cfg.get("include_prereleases", False)))
         for label, url in (cfg.get("links") or {}).items():
             if label in self.link_entries and url:
                 self.link_entries[label].insert(0, url)
@@ -1387,6 +1482,8 @@ class NFOApp(CTkDnD):
             "provider":        self.provider_var.get(),
             "font_family":     self.font_family_var.get(),
             "appearance_mode": self.appearance_var.get(),
+            "check_updates_on_startup": bool(self.check_updates_var.get()),
+            "include_prereleases":      bool(self.include_prereleases_var.get()),
         })
         save_user_config(self.config)
 
