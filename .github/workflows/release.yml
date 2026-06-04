@@ -9,6 +9,12 @@ on:
 permissions:
   contents: write   # needed to upload assets to the release
 
+# Opt every JavaScript-based action into the Node.js 24 runtime ahead of
+# GitHub's June 2026 cutoff. Silences the "Node.js 20 actions are
+# deprecated" warnings on every run.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build:
     name: Build on ${{ matrix.os }}
@@ -39,7 +45,9 @@ jobs:
       - name: Install libmediainfo (macOS)
         if: runner.os == 'macOS'
         run: |
-          brew install mediainfo
+          # --formula disambiguates from the cask of the same name and
+          # silences brew's "Treating mediainfo as a formula" warning.
+          brew install --formula mediainfo
           mkdir -p lib
           # brew ships the versioned dylib (libmediainfo.0.dylib). Copy it
           # to the unversioned name PyInstaller expects.
