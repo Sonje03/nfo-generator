@@ -1,0 +1,14 @@
+# Developer dependencies — needed to run the test suite, linters,
+# type-checker, and pre-commit hooks. Install on top of `requirements.txt`:
+#
+#     pip install -r requirements.txt
+#     pip install -r requirements-dev.txt
+#
+# Equivalent to `pip install -e .[dev]` once the package is installed.
+
+pytest>=8.0
+ruff>=0.6
+mypy>=1.10
+pre-commit>=3.5
+build>=1.0     # `python -m build` for sdist / wheel
+twine>=5.0     # `python -m twine upload` to PyPI

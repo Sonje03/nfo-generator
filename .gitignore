@@ -1,0 +1,85 @@
+# =============================================================================
+# Python
+# =============================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+venv/
+env/
+.venv/
+.env
+
+# Distribution / packaging
+*.egg-info/
+*.egg
+build/
+dist/
+wheels/
+.eggs/
+
+# PyInstaller artefacts
+*.spec.bak
+*.manifest
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+
+# Type checking
+.mypy_cache/
+.ruff_cache/
+
+# =============================================================================
+# IDE — PyCharm / IntelliJ
+# =============================================================================
+# Ignore the whole .idea folder. Cleaner than trying to list every file
+# JetBrains can put there, and nothing in there is useful for users.
+.idea/
+*.iml
+
+# =============================================================================
+# IDE — Visual Studio Code
+# =============================================================================
+.vscode/
+
+# =============================================================================
+# macOS
+# =============================================================================
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# =============================================================================
+# Windows
+# =============================================================================
+Thumbs.db
+Desktop.ini
+
+# =============================================================================
+# Project-specific
+# =============================================================================
+# Temporary XML files left by the old subprocess workflow
+*.xml.tmp
+*.nfo.tmp
+
+# User-local config (not for sharing)
+.nfo_generator.json
+
+# Bundled MediaInfo shared library — large binary, install per-platform via README
+lib/libmediainfo*.dylib
+lib/libmediainfo*.so*
+lib/libmediainfo*.dll
+lib/MediaInfo.dll
+
+# Refactor backups (left by tooling during the split into the package)
+*.py.bak
+*.py.orig

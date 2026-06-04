@@ -1,0 +1,17 @@
+# Core dependencies
+pymediainfo==6.1.0
+langcodes==3.4.0
+
+# GUI dependencies
+customtkinter==5.2.2
+tkinterdnd2==0.4.2
+pillow>=10.0  # used by the TMDB candidate picker to preview posters
+
+# Sample / Subs / Screenshot extraction (bundled ffmpeg binary, no system install)
+imageio-ffmpeg>=0.5.1
+
+# ASCII art generation for customizable header/footer banners
+pyfiglet>=1.0.2
+
+# Build dependencies (optional, for distribution)
+pyinstaller==6.10.0

@@ -1,0 +1,111 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nfo-generator"
+version = "1.0.0"
+description = "Stylized ASCII/Unicode .nfo file generator for video releases (libmediainfo + ffmpeg + TMDB/AniList/TVDB)."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Sonje03" }]
+keywords = ["nfo", "mediainfo", "video", "release", "ascii", "scene",
+            "tmdb", "anilist", "tvdb"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows",
+    "Topic :: Multimedia :: Video",
+    "Topic :: Multimedia :: Video :: Conversion",
+    "Environment :: X11 Applications",
+    "Intended Audience :: End Users/Desktop",
+]
+dependencies = [
+    "pymediainfo>=6.1.0",
+    "langcodes>=3.4.0",
+    "customtkinter>=5.2.2",
+    "tkinterdnd2>=0.4.2",
+    "imageio-ffmpeg>=0.5.1",
+    "pyfiglet>=1.0.2",
+    "pillow>=10.0",          # GUI: poster picker thumbnails + title bar icon
+]
+
+[project.optional-dependencies]
+build = ["pyinstaller>=6.10.0", "build>=1.0", "twine>=5.0"]
+test  = ["pytest>=8.0"]
+dev   = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+    "mypy>=1.10",
+    "pre-commit>=3.5",
+]
+
+[project.urls]
+Homepage   = "https://github.com/Sonje03/nfo-generator"
+Repository = "https://github.com/Sonje03/nfo-generator"
+Changelog  = "https://github.com/Sonje03/nfo-generator/blob/main/CHANGELOG.md"
+Issues     = "https://github.com/Sonje03/nfo-generator/issues"
+
+[project.scripts]
+# Console entry point — installed as a `nfo-generator` command in $PATH
+# when you `pip install nfo-generator` (or `pip install -e .` for dev).
+nfo-generator = "nfo_generator.extraction:main"
+
+# Package layout: nfo_generator/ is the core; nfo_gui is a standalone module
+# kept at the top level because it depends on tkinterdnd2 which doesn't play
+# well being moved inside a package. The legacy NFO_generator.py shim is
+# also exposed so existing scripts and PyInstaller specs keep working.
+[tool.setuptools]
+packages = ["nfo_generator"]
+py-modules = ["NFO_generator", "nfo_gui"]
+
+# Ship the icons + theme + font README with the wheel so the GUI works
+# the same way out of an installed wheel as it does from a checkout.
+[tool.setuptools.package-data]
+nfo_generator = []
+
+[tool.setuptools.data-files]
+"share/nfo-generator/assets"      = ["assets/icon.png", "assets/icon.icns",
+                                     "assets/icon.ico", "assets/theme.json"]
+"share/nfo-generator/assets/fonts" = ["assets/fonts/README.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+addopts = "-q"
+
+# ----- Lint + format -----
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+# Pragmatic rule set: pycodestyle, pyflakes, isort, bugbear, pyupgrade.
+select = ["E", "F", "I", "B", "UP"]
+ignore = [
+    "E501",  # line length is enforced by the formatter, not the linter
+    "E741",  # ambiguous variable names (we use `l` rarely but intentionally)
+    "B008",  # function calls in default argument (ctk.StringVar(...) ok)
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+# ----- Types -----
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true   # customtkinter / tkinterdnd2 ship no stubs
+warn_unused_ignores = true
+warn_redundant_casts = true
+warn_unused_configs = true
+# Strict per-module overrides — start gentle, ratchet up over time.
+disallow_untyped_defs = false
+check_untyped_defs = true

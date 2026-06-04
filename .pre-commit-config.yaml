@@ -1,0 +1,54 @@
+# Pre-commit hooks — install with `pre-commit install` once per clone.
+# Runs on every `git commit` against the staged files only. CI re-runs the
+# same set against the whole repo. See CONTRIBUTING.md.
+
+repos:
+  # ---- Generic hygiene -----------------------------------------------------
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+        # Exclude the JSON theme file — it can have trailing-comma quirks that
+        # `pre-commit-hooks` rejects but CTk accepts. We validate it manually
+        # in tests instead.
+        exclude: "^assets/theme\\.json$"
+      - id: check-added-large-files
+        args: ["--maxkb=2000"]
+      - id: mixed-line-ending
+        args: ["--fix=lf"]
+
+  # ---- Ruff (lint + format, replaces black + isort + flake8) ---------------
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      # Run the linter first (fast) so format fixes don't shadow real issues.
+      - id: ruff
+        args: ["--fix", "--exit-non-zero-on-fix"]
+      - id: ruff-format
+
+  # ---- mypy (types) --------------------------------------------------------
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.11.2
+    hooks:
+      - id: mypy
+        # mypy is slow against the GUI module (CTk runtime API surface), so
+        # we limit the hook to the core package where types matter most.
+        files: "^nfo_generator/"
+        additional_dependencies:
+          - "pymediainfo>=6.1.0"
+
+# Don't run hooks against vendored / generated content.
+exclude: |
+  (?x)^(
+    venv/.*
+    | dist/.*
+    | build/.*
+    | \.idea/.*
+    | nfo_generator/__pycache__/.*
+    | assets/icon\.(icns|ico|png)
+    | .*\.bak
+  )$
