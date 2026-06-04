@@ -48,6 +48,19 @@ import tempfile as _tempfile  # noqa: E402
 from pathlib import Path as _Path  # noqa: E402
 
 
+def _resource_path(relative: str) -> _Path:
+    """
+    Resolve a path to a bundled resource (assets/, fonts, theme.json, …)
+    so it works the same in source checkouts and in PyInstaller bundles.
+
+    PyInstaller extracts data files (declared via ``--add-data``) into the
+    ``sys._MEIPASS`` temp directory at runtime. In source mode that
+    attribute doesn't exist and the resources sit next to this file.
+    """
+    base = _Path(getattr(sys, "_MEIPASS", _Path(__file__).resolve().parent))
+    return base / relative
+
+
 # Font choices offered in the Style tab. Each entry is (display name,
 # family, default_size). The size is per-font because a pixel / display
 # face at 13px looks oversized next to a proportional sans at the same
@@ -153,7 +166,7 @@ def _load_local_fonts() -> list[str]:
     Called before ``_bootstrap_theme`` so the freshly-registered families
     are available the moment CustomTkinter starts measuring widgets.
     """
-    fonts_dir = _Path(__file__).resolve().parent / "assets" / "fonts"
+    fonts_dir = _resource_path("assets/fonts")
     if not fonts_dir.is_dir():
         return []
     loaded: list[str] = []
@@ -185,7 +198,7 @@ def _bootstrap_theme() -> None:
     obvious why a font might not appear (config missing, family typo,
     Tk silently falling back, …).
     """
-    theme_path = _Path(__file__).resolve().parent / "assets" / "theme.json"
+    theme_path = _resource_path("assets/theme.json")
 
     # Pull the saved preferences. Reading the config here is safe — the
     # import is at module level, before any GUI code runs.
@@ -457,7 +470,7 @@ class NFOApp(CTkDnD):
         # Optional icon to the left of the title — silently skipped if
         # Pillow isn't installed or the PNG is missing (the title alone
         # is enough to identify the app).
-        icon_path = _Path(__file__).resolve().parent / "assets" / "icon.png"
+        icon_path = _resource_path("assets/icon.png")
         if icon_path.exists():
             try:
                 from PIL import Image as _PILImage
@@ -1162,7 +1175,7 @@ class NFOApp(CTkDnD):
         import tkinter as tk
 
         candidates = [
-            Path(__file__).resolve().parent / "assets" / "icon.png",
+            _resource_path("assets/icon.png"),
             Path.cwd() / "assets" / "icon.png",
         ]
         for path in candidates:

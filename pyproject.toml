@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nfo-generator"
-version = "1.0.0"
+version = "1.0.0-beta.2"
 description = "Stylized ASCII/Unicode .nfo file generator for video releases (libmediainfo + ffmpeg + TMDB/AniList/TVDB)."
 readme = "README.md"
 requires-python = ">=3.10"

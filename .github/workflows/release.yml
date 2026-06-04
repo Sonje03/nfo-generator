@@ -80,11 +80,25 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           FFMPEG=$(python -c "import imageio_ffmpeg as f; print(f.get_ffmpeg_exe())")
+          # Strip the leading "v" from the tag to get a clean version string.
+          VERSION="${GITHUB_REF_NAME#v}"
           pyinstaller --onedir --windowed --name "NFO Generator" \
             --icon assets/icon.icns \
+            --osx-bundle-identifier com.sonje03.nfo-generator \
             --add-binary "lib/libmediainfo.dylib:lib" \
             --add-binary "$FFMPEG:imageio_ffmpeg/binaries" \
+            --add-data "assets:assets" \
+            --collect-data pyfiglet \
             NFO_generator.py
+
+          # Patch Info.plist so the About box / Finder show the right
+          # version + copyright instead of the default 0.0.0.
+          PLIST="dist/NFO Generator.app/Contents/Info.plist"
+          plutil -replace CFBundleShortVersionString -string "$VERSION" "$PLIST"
+          plutil -replace CFBundleVersion           -string "$VERSION" "$PLIST"
+          plutil -insert NSHumanReadableCopyright   -string "MIT © 2026 Sonje03" "$PLIST" || \
+            plutil -replace NSHumanReadableCopyright -string "MIT © 2026 Sonje03" "$PLIST"
+
           cd dist && zip -r "${{ matrix.artifact }}.zip" "NFO Generator.app"
 
       - name: Build (Windows)
@@ -96,6 +110,8 @@ jobs:
             --icon assets\icon.ico `
             --add-binary "lib\MediaInfo.dll;lib" `
             --add-binary "$ffmpeg;imageio_ffmpeg/binaries" `
+            --add-data "assets;assets" `
+            --collect-data pyfiglet `
             NFO_generator.py
           Compress-Archive -Path "dist\NFO Generator\*" -DestinationPath "dist\${{ matrix.artifact }}.zip"
 
