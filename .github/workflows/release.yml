@@ -41,17 +41,39 @@ jobs:
         run: |
           brew install mediainfo
           mkdir -p lib
-          cp "$(brew --prefix)/lib/libmediainfo.0.dylib" lib/ || \
-          cp "$(brew --prefix)/lib/libmediainfo.dylib" lib/
+          # brew ships the versioned dylib (libmediainfo.0.dylib). Copy it
+          # to the unversioned name PyInstaller expects.
+          SRC=$(ls "$(brew --prefix)/lib/libmediainfo"*.dylib | head -1)
+          cp "$SRC" lib/libmediainfo.dylib
+          ls -la lib/
 
       - name: Install libmediainfo (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          choco install mediainfo-cli -y
+          # `mediainfo-cli` only ships the CLI exe, not the DLL we need.
+          # `mediainfo` (the GUI package) ships MediaInfo.dll under
+          # C:\Program Files\MediaInfo\. Use that.
+          choco install mediainfo -y --no-progress
           New-Item -ItemType Directory -Force -Path lib | Out-Null
-          $dll = Get-ChildItem -Path "C:\ProgramData\chocolatey" -Recurse -Filter "MediaInfo.dll" | Select-Object -First 1
-          if ($dll) { Copy-Item $dll.FullName lib\ } else { Write-Error "MediaInfo.dll not found" }
+          $candidates = @(
+            "C:\Program Files\MediaInfo\MediaInfo.dll",
+            "C:\Program Files (x86)\MediaInfo\MediaInfo.dll"
+          )
+          $found = $null
+          foreach ($p in $candidates) {
+            if (Test-Path $p) { $found = $p; break }
+          }
+          if (-not $found) {
+            # Last resort: scan C:\Program Files recursively.
+            $found = (Get-ChildItem -Path "C:\Program Files" -Recurse `
+              -Filter "MediaInfo.dll" -ErrorAction SilentlyContinue |
+              Select-Object -First 1).FullName
+          }
+          if (-not $found) { throw "MediaInfo.dll not found after install" }
+          Write-Host "Found MediaInfo.dll at: $found"
+          Copy-Item $found lib\
+          Get-ChildItem lib\
 
       # ---- Build with PyInstaller ------------------------------------------
       - name: Build (macOS)
