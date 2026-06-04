@@ -99,6 +99,13 @@ jobs:
           plutil -insert NSHumanReadableCopyright   -string "MIT © 2026 Sonje03" "$PLIST" || \
             plutil -replace NSHumanReadableCopyright -string "MIT © 2026 Sonje03" "$PLIST"
 
+          # Ad-hoc codesign every binary in the bundle, then the bundle
+          # itself. Without a paid Apple Developer ID we can't satisfy
+          # Gatekeeper fully, but ad-hoc signing fixes the "damaged" error
+          # on macOS Sequoia — users will see a normal "unidentified
+          # developer" warning they can bypass with right-click → Open.
+          codesign --force --deep --sign - "dist/NFO Generator.app"
+
           cd dist && zip -r "${{ matrix.artifact }}.zip" "NFO Generator.app"
 
       - name: Build (Windows)

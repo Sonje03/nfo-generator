@@ -97,6 +97,21 @@ Windows: download MediaInfo CLI from
 <https://mediaarea.net/en/MediaInfo/Download/Windows> and copy
 `MediaInfo.dll` into `lib/`.
 
+## First launch on macOS
+
+The `.app` isn't signed with a paid Apple Developer ID, so Gatekeeper will
+block it the first time. Two options:
+
+- **Right-click the app → Open → Open anyway.** Works most of the time.
+- If macOS says *"NFO Generator is damaged and can't be opened"*, run this
+  once in Terminal to strip the quarantine attribute:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/NFO Generator.app"
+```
+
+After that the app launches normally.
+
 ## Screenshots
 
 ![Release tab](docs/screenshots/gui-release.png)
