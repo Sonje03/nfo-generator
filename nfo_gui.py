@@ -165,18 +165,30 @@ def _load_local_fonts() -> list[str]:
 
     Called before ``_bootstrap_theme`` so the freshly-registered families
     are available the moment CustomTkinter starts measuring widgets.
+
+    Per-file logging on Windows so we can see which fonts actually made it
+    through `AddFontResourceExW` — silent failures are common when a TTF
+    has a quirky internal name.
     """
     fonts_dir = _resource_path("assets/fonts")
     if not fonts_dir.is_dir():
+        print(f"[nfo_gui] Fonts dir not found at {fonts_dir}")
         return []
     loaded: list[str] = []
+    failed: list[str] = []
     for ttf in sorted(fonts_dir.glob("*.[oOtT][tT][fF]")):
         if _register_font_file(ttf):
             loaded.append(str(ttf))
+        else:
+            failed.append(ttf.name)
     if loaded:
-        # Helpful one-liner in the console — silent for users who never
-        # look at stdout, useful for anyone troubleshooting font issues.
-        print(f"[nfo_gui] Registered {len(loaded)} local font(s) from assets/fonts/.")
+        print(f"[nfo_gui] Registered {len(loaded)} local font(s) from {fonts_dir}.")
+        for path in loaded:
+            print(f"  ✓ {os.path.basename(path)}")
+    if failed:
+        print(f"[nfo_gui] Failed to register {len(failed)} font(s):")
+        for name in failed:
+            print(f"  ✗ {name}")
     return loaded
 
 
@@ -251,6 +263,37 @@ def _bootstrap_theme() -> None:
 
 
 _bootstrap_theme()
+
+
+def _diagnose_fonts() -> None:
+    """One-shot stdout report on Tk's view of the bundled font families.
+
+    Useful when a user reports the pixel font isn't applying — we list
+    which families Tk actually catalogued after the ctypes registration,
+    so we know whether the issue is registration-side or rendering-side.
+    """
+    try:
+        import tkinter as _tk
+        import tkinter.font as _tkf
+        _root = _tk.Tk()
+        _root.withdraw()
+        families = set(_tkf.families(_root))
+        wanted = ["Press Start 2P", "VT323", "Silkscreen", "Pixelify Sans",
+                  "Major Mono Display", "Share Tech Mono", "JetBrains Mono",
+                  "Aptos"]
+        found = [f for f in wanted if f in families]
+        missing = [f for f in wanted if f not in families]
+        print(f"[nfo_gui] Tk recognises {len(found)}/{len(wanted)} bundled fonts.")
+        if found:
+            print(f"  ✓ {', '.join(found)}")
+        if missing:
+            print(f"  ✗ {', '.join(missing)} (Tk will fall back to system default)")
+        _root.destroy()
+    except Exception as exc:  # noqa: BLE001
+        print(f"[nfo_gui] Font diagnostic skipped: {exc!r}")
+
+
+_diagnose_fonts()
 
 
 from nfo_generator import (
@@ -1164,11 +1207,23 @@ class NFOApp(CTkDnD):
                       command=self._render_preview
                       ).grid(row=0, column=2)
 
-        # The preview textbox itself. wrap=none so the ASCII box stays aligned;
-        # the user can scroll horizontally if their window is narrower than 75 chars.
+        # Pick a system monospace font that ships box-drawing glyphs
+        # (█ ▓ ▒ ░). The UI font (Press Start 2P by default) doesn't have
+        # them — the preview would otherwise render every block as a tofu
+        # rectangle on Windows.
+        if sys.platform == "darwin":
+            preview_family = "Menlo"
+        elif sys.platform == "win32":
+            preview_family = "Consolas"
+        else:
+            preview_family = "DejaVu Sans Mono"
+
+        # The preview textbox itself. wrap=none so the ASCII box stays
+        # aligned; the user can scroll horizontally if their window is
+        # narrower than 75 chars.
         self.preview_textbox = ctk.CTkTextbox(
             container, wrap="none", activate_scrollbars=True,
-            font=ctk.CTkFont(family="Menlo", size=10),
+            font=ctk.CTkFont(family=preview_family, size=11),
         )
         self.preview_textbox.grid(row=1, column=0, sticky="nsew", padx=8, pady=(0, 8))
         self.preview_textbox.insert("1.0", "Load a file or folder to see the preview.")
@@ -1253,16 +1308,35 @@ class NFOApp(CTkDnD):
 
     def _apply_window_icon(self) -> None:
         """
-        Set the window / dock icon from ``assets/icon.png``.
+        Set the window / dock icon from the bundled assets.
 
-        Best-effort: silently skipped if the file is missing (e.g. running
-        from a stripped-down checkout) or if the platform's Tk build can't
-        decode it. PyInstaller-bundled apps get the icon through the
-        ``--icon`` flag instead — this method only matters when running
-        from source.
+        Best-effort: silently skipped if the file is missing or the
+        platform's Tk can't decode it. PyInstaller-bundled apps also get
+        the icon through `--icon`, but that only paints the .app / .exe
+        file icon, not the live window — this method handles the runtime
+        side.
+
+        Windows specifics: Tk's `iconphoto(PNG)` doesn't update the
+        taskbar / title bar icon reliably on Windows. We use
+        `iconbitmap(.ico)` instead when running on win32.
         """
         from pathlib import Path
         import tkinter as tk
+
+        if sys.platform == "win32":
+            ico_candidates = [
+                _resource_path("assets/icon.ico"),
+                Path.cwd() / "assets" / "icon.ico",
+            ]
+            for path in ico_candidates:
+                if not path.exists():
+                    continue
+                try:
+                    self.iconbitmap(default=str(path))
+                    return
+                except Exception:  # noqa: BLE001
+                    continue
+            # fall through to the PNG path below as a last resort
 
         candidates = [
             _resource_path("assets/icon.png"),
@@ -1278,7 +1352,7 @@ class NFOApp(CTkDnD):
                 self.iconphoto(True, photo)
                 return
             except Exception:  # noqa: BLE001
-                continue  # fall through to the next candidate or skip silently
+                continue
 
     # ========================================================================
     # Update check

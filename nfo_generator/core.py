@@ -324,10 +324,31 @@ def get_raw_mediainfo_text(file_path: str) -> Optional[str]:
         return None
     if not isinstance(result, str):
         return None
-    # Replace the absolute directory with nothing so only the basename remains.
-    directory = os.path.dirname(os.path.abspath(file_path))
-    if directory:
-        result = result.replace(directory + os.sep, "").replace(directory, "")
+    # Strip the absolute directory so only the basename remains in
+    # "Complete name". MediaInfo normalizes the path with forward slashes
+    # on every platform (yes, even Windows), so the previous os.sep-based
+    # replace silently missed the leak on Windows. Rewrite the line
+    # directly via regex — robust to either separator.
+    filename = os.path.basename(file_path)
+    if filename:
+        result = re.sub(
+            r"^(Complete name\s*:\s*).*$",
+            lambda m: m.group(1) + filename,
+            result,
+            count=1,
+            flags=re.MULTILINE,
+        )
+        # Belt and braces: also strip any remaining occurrence of the
+        # directory part (handles edge cases like a "Folder" header on a
+        # season pack, or weird MediaInfo plugins that show the path
+        # somewhere else).
+        directory_fwd = os.path.dirname(file_path).replace("\\", "/")
+        directory_bck = os.path.dirname(file_path).replace("/", "\\")
+        for directory in (directory_fwd, directory_bck):
+            if directory:
+                result = result.replace(directory + "/", "")
+                result = result.replace(directory + "\\", "")
+                result = result.replace(directory, "")
     return result.strip("\n")
 
 

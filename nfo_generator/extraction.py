@@ -262,12 +262,20 @@ def _run_ffmpeg(ffmpeg: str, args: list[str]) -> bool:
     We swallow errors deliberately — extraction is best-effort, and a
     failure shouldn't break the rest of the .nfo workflow.
     """
+    # On Windows, subprocess.run() without `creationflags` pops up a
+    # console window for every child process — very noticeable when we
+    # spawn ffmpeg dozens of times for screenshots. CREATE_NO_WINDOW
+    # (= 0x08000000) suppresses that. No-op on macOS / Linux.
+    extra: dict = {}
+    if sys.platform == "win32":
+        extra["creationflags"] = 0x08000000  # CREATE_NO_WINDOW
     try:
         completed = subprocess.run(
             [ffmpeg, "-y", "-hide_banner", "-loglevel", "error", *args],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
             check=False,
+            **extra,
         )
         return completed.returncode == 0
     except (OSError, subprocess.SubprocessError):
