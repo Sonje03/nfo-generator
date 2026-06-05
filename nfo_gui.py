@@ -61,6 +61,24 @@ def _resource_path(relative: str) -> _Path:
     return base / relative
 
 
+# On Windows, the same point size renders ~25–30 % bigger than on macOS
+# for pixel / display fonts because of how GDI hints them and Direct2D
+# applies DPI scaling. Without this override the pixel UI feels chunky on
+# Windows. Sizes here are the tuned-down values that match the macOS
+# visual weight at the default 96 DPI Windows scale.
+_WINDOWS_SIZE_OVERRIDES: dict[str, int] = {
+    "Press Start 2P":     7,   # was 9
+    "VT323":              15,  # was 20
+    "Silkscreen":         8,   # was 10
+    "Pixelify Sans":      11,  # was 13
+    "Major Mono Display": 9,   # was 11
+    "Share Tech Mono":    13,  # was 15
+    "JetBrains Mono":     11,  # was 12 (mild adjustment)
+    # Aptos + SF Pro Text + Segoe UI render consistently across platforms,
+    # no override needed.
+}
+
+
 # Font choices offered in the Style tab. Each entry is (display name,
 # family, default_size). The size is per-font because a pixel / display
 # face at 13px looks oversized next to a proportional sans at the same
@@ -249,7 +267,16 @@ def _bootstrap_theme() -> None:
                     if plat in theme["CTkFont"]:
                         theme["CTkFont"][plat]["family"] = saved_family
                         if size_override is not None:
-                            theme["CTkFont"][plat]["size"] = size_override
+                            size_for_plat = size_override
+                            # Windows renders the same point size noticeably
+                            # bigger than macOS for pixel / display fonts
+                            # (different hinting + DPI scaling). Scale down
+                            # so the UI density matches across platforms.
+                            if plat == "Windows":
+                                size_for_plat = _WINDOWS_SIZE_OVERRIDES.get(
+                                    saved_family, size_override,
+                                )
+                            theme["CTkFont"][plat]["size"] = size_for_plat
             # Write a temp theme file so CTk reads the (possibly cleaned-up
             # or font-overridden) values. We always go through the temp file
             # path now because the strip-comments pass above produces a

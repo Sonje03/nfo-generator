@@ -97,6 +97,23 @@ Windows: download MediaInfo CLI from
 <https://mediaarea.net/en/MediaInfo/Download/Windows> and copy
 `MediaInfo.dll` into `lib/`.
 
+## Viewing the rendered `.nfo`
+
+The output uses block-drawing Unicode characters (`█ ▓ ▒ ░`) for the
+box borders and section dividers. They render seamlessly with the
+monospace fonts shipped on macOS (Menlo, SF Mono). On Windows, the
+default Notepad font draws visible "joints" between adjacent block
+cells, which makes the box look broken even though the file content is
+correct.
+
+If you want the proper scene look on Windows, open the `.nfo` in an
+editor with a font that renders block elements as solid contiguous
+fills:
+
+- VS Code with Cascadia Code or JetBrains Mono
+- Notepad++ with Lucida Console (size 9–11)
+- Sublime Text with the default Consolas at size 10 works in practice
+
 ## First launch on macOS
 
 The `.app` isn't signed with a paid Apple Developer ID, so Gatekeeper will
