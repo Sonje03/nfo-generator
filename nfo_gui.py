@@ -158,22 +158,31 @@ def _register_font_file(ttf_path: _Path) -> bool:
         return False
 
 
+# Diagnostic info captured at startup so the Settings tab can show it later
+# (PyInstaller `--windowed` builds suppress stdout, so users on Windows can't
+# see the boot-time prints).
+_DIAGNOSTIC_LOG: list[str] = []
+
+
+def _log(line: str) -> None:
+    """Print to stdout AND keep a copy for the Settings → Show diagnostic modal."""
+    print(line)
+    _DIAGNOSTIC_LOG.append(line)
+
+
 def _load_local_fonts() -> list[str]:
     """
-    Register every ``*.ttf`` / ``*.otf`` in ``assets/fonts/`` with the OS for
-    this process. Returns the list of absolute paths successfully loaded.
+    Register every ``*.ttf`` / ``*.otf`` in ``assets/fonts/`` with the OS
+    for this process. Returns the list of absolute paths successfully loaded.
 
     Called before ``_bootstrap_theme`` so the freshly-registered families
     are available the moment CustomTkinter starts measuring widgets.
-
-    Per-file logging on Windows so we can see which fonts actually made it
-    through `AddFontResourceExW` — silent failures are common when a TTF
-    has a quirky internal name.
     """
     fonts_dir = _resource_path("assets/fonts")
     if not fonts_dir.is_dir():
-        print(f"[nfo_gui] Fonts dir not found at {fonts_dir}")
+        _log(f"[fonts] Directory not found at {fonts_dir}")
         return []
+    _log(f"[fonts] Scanning {fonts_dir}")
     loaded: list[str] = []
     failed: list[str] = []
     for ttf in sorted(fonts_dir.glob("*.[oOtT][tT][fF]")):
@@ -181,14 +190,11 @@ def _load_local_fonts() -> list[str]:
             loaded.append(str(ttf))
         else:
             failed.append(ttf.name)
-    if loaded:
-        print(f"[nfo_gui] Registered {len(loaded)} local font(s) from {fonts_dir}.")
-        for path in loaded:
-            print(f"  ✓ {os.path.basename(path)}")
-    if failed:
-        print(f"[nfo_gui] Failed to register {len(failed)} font(s):")
-        for name in failed:
-            print(f"  ✗ {name}")
+    _log(f"[fonts] Registered {len(loaded)} / {len(loaded) + len(failed)} TTF(s).")
+    for path in loaded:
+        _log(f"  + {os.path.basename(path)}")
+    for name in failed:
+        _log(f"  - FAILED: {name}")
     return loaded
 
 
@@ -266,11 +272,11 @@ _bootstrap_theme()
 
 
 def _diagnose_fonts() -> None:
-    """One-shot stdout report on Tk's view of the bundled font families.
+    """One-shot diagnostic on Tk's view of the bundled font families.
 
-    Useful when a user reports the pixel font isn't applying — we list
-    which families Tk actually catalogued after the ctypes registration,
-    so we know whether the issue is registration-side or rendering-side.
+    Captures into _DIAGNOSTIC_LOG so the Settings tab can display it
+    later — useful on Windows where ``--windowed`` PyInstaller builds
+    suppress stdout and the user can't see boot-time prints.
     """
     try:
         import tkinter as _tk
@@ -283,14 +289,17 @@ def _diagnose_fonts() -> None:
                   "Aptos"]
         found = [f for f in wanted if f in families]
         missing = [f for f in wanted if f not in families]
-        print(f"[nfo_gui] Tk recognises {len(found)}/{len(wanted)} bundled fonts.")
-        if found:
-            print(f"  ✓ {', '.join(found)}")
-        if missing:
-            print(f"  ✗ {', '.join(missing)} (Tk will fall back to system default)")
+        _log(f"[tk] Recognised {len(found)} / {len(wanted)} bundled fonts.")
+        for f in found:
+            _log(f"  + {f}")
+        for f in missing:
+            _log(f"  - MISSING: {f}")
+        _log(f"[platform] sys.platform = {sys.platform!r}")
+        _log(f"[platform] Tk version    = {_tk.TkVersion}")
+        _log(f"[platform] Total fonts seen by Tk: {len(families)}")
         _root.destroy()
     except Exception as exc:  # noqa: BLE001
-        print(f"[nfo_gui] Font diagnostic skipped: {exc!r}")
+        _log(f"[tk] Font diagnostic skipped: {exc!r}")
 
 
 _diagnose_fonts()
@@ -1143,7 +1152,65 @@ class NFOApp(CTkDnD):
             anchor="w", justify="left", wraplength=600,
             text_color=("gray45", "gray55"),
             font=ctk.CTkFont(size=11),
+        ).grid(row=row, column=0, sticky="w", padx=4, pady=(0, 12)); row += 1
+
+        # ---- Diagnostics ---------------------------------------------------
+        self._section_label(container, "Diagnostics", row); row += 1
+        ctk.CTkLabel(
+            container,
+            text="Startup log: which fonts the OS registered and which ones Tk\n"
+                 "actually saw. Useful when reporting a font / theme bug.",
+            anchor="w", justify="left", wraplength=600,
+            text_color=("gray45", "gray55"),
+            font=ctk.CTkFont(size=11),
+        ).grid(row=row, column=0, sticky="w", padx=4, pady=(0, 6)); row += 1
+        ctk.CTkButton(
+            container, text="Show startup diagnostic", width=200,
+            command=self._show_diagnostic,
         ).grid(row=row, column=0, sticky="w", padx=4, pady=(0, 4)); row += 1
+
+    def _show_diagnostic(self) -> None:
+        """Pop a modal with the captured startup diagnostic log."""
+        win = ctk.CTkToplevel(self)
+        win.title("Startup diagnostic")
+        win.geometry("640x480")
+        win.transient(self)
+
+        label = ctk.CTkLabel(
+            win, text="Startup log (copy / screenshot this to report bugs):",
+            anchor="w", font=ctk.CTkFont(size=12, weight="bold"),
+        )
+        label.pack(fill="x", padx=12, pady=(12, 4))
+
+        # Monospace textbox so the alignment of `+` / `-` columns survives.
+        if sys.platform == "darwin":
+            mono = "Menlo"
+        elif sys.platform == "win32":
+            mono = "Consolas"
+        else:
+            mono = "DejaVu Sans Mono"
+        textbox = ctk.CTkTextbox(
+            win, wrap="word",
+            font=ctk.CTkFont(family=mono, size=11),
+        )
+        textbox.pack(fill="both", expand=True, padx=12, pady=(0, 6))
+        textbox.insert("1.0", "\n".join(_DIAGNOSTIC_LOG) or "(empty)")
+        textbox.configure(state="disabled")
+
+        btn_row = ctk.CTkFrame(win, fg_color="transparent")
+        btn_row.pack(fill="x", padx=12, pady=(0, 12))
+        ctk.CTkButton(
+            btn_row, text="Copy to clipboard", width=160,
+            command=lambda: (
+                win.clipboard_clear(),
+                win.clipboard_append("\n".join(_DIAGNOSTIC_LOG)),
+                win.update(),
+            ),
+        ).pack(side="left")
+        ctk.CTkButton(
+            btn_row, text="Close", width=80,
+            command=win.destroy,
+        ).pack(side="right")
 
     def _check_updates_now(self) -> None:
         """Manual update check — bypasses the 24h cache."""
