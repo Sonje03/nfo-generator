@@ -67,15 +67,17 @@ def _resource_path(relative: str) -> _Path:
 # Windows. Sizes here are the tuned-down values that match the macOS
 # visual weight at the default 96 DPI Windows scale.
 _WINDOWS_SIZE_OVERRIDES: dict[str, int] = {
-    "Press Start 2P":     7,   # was 9
-    "VT323":              15,  # was 20
-    "Silkscreen":         8,   # was 10
-    "Pixelify Sans":      11,  # was 13
-    "Major Mono Display": 9,   # was 11
-    "Share Tech Mono":    13,  # was 15
-    "JetBrains Mono":     11,  # was 12 (mild adjustment)
-    # Aptos + SF Pro Text + Segoe UI render consistently across platforms,
-    # no override needed.
+    # Tuned from real Windows screenshots — going too small clipped the
+    # top of Press Start 2P glyphs and made the others unreadable. Values
+    # below sit one notch above what looked too cramped in beta.7.
+    "Press Start 2P":     8,   # macOS uses 9
+    "VT323":              18,  # macOS uses 20
+    "Silkscreen":         10,  # macOS uses 10
+    "Pixelify Sans":      12,  # macOS uses 13
+    "Major Mono Display": 10,  # macOS uses 11
+    "Share Tech Mono":    14,  # macOS uses 15
+    # Aptos + SF Pro Text + Segoe UI + JetBrains Mono render consistently
+    # across platforms — no override.
 }
 
 
@@ -1202,6 +1204,28 @@ class NFOApp(CTkDnD):
         win.title("Startup diagnostic")
         win.geometry("640x480")
         win.transient(self)
+        # CTkToplevel doesn't inherit the parent window's icon — apply it
+        # explicitly so the modal shows the app icon in its title bar and
+        # dock entry instead of the Tk feather default.
+        try:
+            if sys.platform == "win32":
+                ico = _resource_path("assets/icon.ico")
+                if ico.exists():
+                    win.iconbitmap(str(ico))
+            else:
+                # macOS / Linux — reuse the parent's PhotoImage if it was
+                # cached in `_apply_window_icon`, otherwise load fresh.
+                photo = getattr(self, "_icon_image", None)
+                if photo is None:
+                    import tkinter as _tk
+                    png = _resource_path("assets/icon.png")
+                    if png.exists():
+                        photo = _tk.PhotoImage(file=str(png))
+                        self._icon_image = photo
+                if photo is not None:
+                    win.iconphoto(False, photo)
+        except Exception:  # noqa: BLE001
+            pass  # cosmetic; never block the modal
 
         label = ctk.CTkLabel(
             win, text="Startup log (copy / screenshot this to report bugs):",
@@ -1243,7 +1267,14 @@ class NFOApp(CTkDnD):
         """Manual update check — bypasses the 24h cache."""
         self.update_status_label.configure(text="Checking…")
         repo = self.config.get("github_repo") or "Sonje03/nfo-generator"
+        # Pre-release users (anyone on a -beta / -rc / -alpha build) always
+        # poll the full list — see `_should_include_prereleases`. The
+        # toggle is an OR with the auto-detection.
         include_pre = bool(self.include_prereleases_var.get())
+        suffix_markers = ("-beta", "-rc", "-alpha", "-pre", "-dev")
+        if not include_pre and any(m in NFO_GENERATOR_VERSION.lower()
+                                    for m in suffix_markers):
+            include_pre = True
 
         def _no_update_callback():
             # Reached only when the check completed but no newer release
@@ -1462,7 +1493,7 @@ class NFOApp(CTkDnD):
         if not self.config.get("check_updates_on_startup", True):
             return
         repo = self.config.get("github_repo") or "Sonje03/nfo-generator"
-        include_pre = bool(self.config.get("include_prereleases", False))
+        include_pre = self._should_include_prereleases()
         try:
             check_for_update_async(
                 repo=repo,
@@ -1474,30 +1505,67 @@ class NFOApp(CTkDnD):
         except Exception as exc:  # noqa: BLE001
             logger.debug("Skipping update check: %s", exc)
 
+    def _should_include_prereleases(self) -> bool:
+        """
+        True if we should poll the full release list (incl. pre-releases).
+
+        Honours the user toggle, AND forces it on when the running version
+        itself looks like a pre-release (``-beta``, ``-rc``, ``-alpha``).
+        Otherwise a user on v1.0.0-beta.6 would silently never see
+        v1.0.0-beta.7 because GitHub's ``/releases/latest`` endpoint
+        skips pre-releases by design.
+        """
+        if self.config.get("include_prereleases", False):
+            return True
+        suffix_markers = ("-beta", "-rc", "-alpha", "-pre", "-dev")
+        return any(m in NFO_GENERATOR_VERSION.lower() for m in suffix_markers)
+
     def _show_update_banner(self, latest: str, url: str) -> None:
         """
         Paint a one-line "Update available" banner at the very top of the
         window. Clicking the link opens the release page in the system
         browser. Idempotent: re-calling replaces the banner instead of
         stacking it.
+
+        Implementation: the banner is hosted inside a permanent ``_top_slot``
+        container in row 0 of the window. The tabs / footer keep their
+        original row indices and the ``rowconfigure`` weights stay untouched
+        — that avoids the layout regression where shifting children by +1
+        left the weight on the topbar row and pushed the actual form into
+        the bottom half of the window.
         """
         import webbrowser
-        # Remove a previous banner before stacking a new one — happens if
-        # the user triggers a forced re-check from a future menu item.
+        # Remove the previous banner if any so a re-check doesn't stack.
         existing = getattr(self, "_update_banner", None)
         if existing is not None:
             existing.destroy()
 
-        banner = ctk.CTkFrame(self, fg_color=("#1FA9A1", "#40CCC4"), corner_radius=0)
-        banner.grid(row=0, column=0, sticky="ew")
-        # Push every existing row down by one. Grid stays consistent
-        # because we only ever insert at row 0 once per session.
-        for child in self.grid_slaves():
-            if child is banner:
-                continue
-            info = child.grid_info()
-            if int(info.get("row", 0)) >= 0:
-                child.grid(row=int(info["row"]) + 1, column=int(info["column"]))
+        # `_top_slot` is created lazily on the first banner so the grid of
+        # the root window is only mutated once.
+        slot = getattr(self, "_top_slot", None)
+        if slot is None:
+            slot = ctk.CTkFrame(self, fg_color="transparent")
+            # Insert at row=-1 (anything < 0 sorts above the existing rows
+            # without disturbing them). Tk doesn't actually accept negative
+            # rows, so we instead reserve row 0 for the slot and bump every
+            # existing root child once at first call only.
+            for child in self.grid_slaves():
+                info = child.grid_info()
+                if int(info.get("row", -1)) >= 0:
+                    child.grid(row=int(info["row"]) + 1, column=int(info["column"]))
+            # Move the existing row weight to track the shifted rows.
+            try:
+                self.grid_rowconfigure(2, weight=1)
+                self.grid_rowconfigure(1, weight=0)
+            except Exception:  # noqa: BLE001
+                pass
+            slot.grid(row=0, column=0, sticky="ew")
+            self._top_slot = slot
+
+        banner = ctk.CTkFrame(
+            slot, fg_color=("#1FA9A1", "#40CCC4"), corner_radius=0,
+        )
+        banner.pack(fill="x")
 
         ctk.CTkLabel(
             banner,
@@ -1516,6 +1584,8 @@ class NFOApp(CTkDnD):
         for child in banner.winfo_children():
             if not isinstance(child, ctk.CTkButton):
                 child.bind("<Button-1>", lambda _e: webbrowser.open(url))
+
+        self._update_banner = banner
 
         self._update_banner = banner
 

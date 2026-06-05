@@ -137,7 +137,7 @@
   },
   "CTkFont": {
     "macOS":   { "family": "Press Start 2P", "size": 9, "weight": "normal" },
-    "Windows": { "family": "Press Start 2P", "size": 7, "weight": "normal" },
+    "Windows": { "family": "Press Start 2P", "size": 8, "weight": "normal" },
     "Linux":   { "family": "Press Start 2P", "size": 9, "weight": "normal" }
   }
 }
