@@ -1205,18 +1205,28 @@ class NFOApp(CTkDnD):
         win.geometry("640x480")
         win.transient(self)
 
-        # CTkToplevel calls its own internal setup right after __init__,
-        # which silently overwrites iconbitmap() / iconphoto() calls made
-        # in the same tick. We defer ours to the next idle cycle so they
-        # land on top of CTk's defaults. 150 ms is overkill on macOS and
-        # Linux but cheap, and on Windows it's the only timing that
-        # reliably gets the .ico into the title bar / taskbar.
-        def _apply_modal_icon() -> None:
+        # CTkToplevel does its own deferred icon setup on Windows that
+        # wins over a single iconbitmap() call. We hit it three times at
+        # increasing delays so at least one of them lands AFTER whatever
+        # CTk is doing internally. Belt + suspenders + a third pair of
+        # suspenders.
+        def _apply_modal_icon(stage: str) -> None:
+            log_line = f"[modal-icon] {stage}: "
             try:
                 if sys.platform == "win32":
                     ico = _resource_path("assets/icon.ico")
-                    if ico.exists():
+                    if not ico.exists():
+                        log_line += f"icon.ico NOT FOUND at {ico}"
+                    else:
+                        # Try both APIs — iconbitmap is the standard one,
+                        # wm_iconbitmap is its alias but sometimes only one
+                        # of them sticks depending on the Tk build.
                         win.iconbitmap(str(ico))
+                        try:
+                            win.wm_iconbitmap(str(ico))
+                        except Exception:  # noqa: BLE001
+                            pass
+                        log_line += f"applied iconbitmap({ico})"
                 else:
                     photo = getattr(self, "_icon_image", None)
                     if photo is None:
@@ -1227,10 +1237,19 @@ class NFOApp(CTkDnD):
                             self._icon_image = photo
                     if photo is not None:
                         win.iconphoto(False, photo)
-            except Exception:  # noqa: BLE001
-                pass  # cosmetic; never block the modal
+                        log_line += "applied iconphoto"
+                    else:
+                        log_line += "no icon.png found"
+            except Exception as exc:  # noqa: BLE001
+                log_line += f"ERROR: {exc!r}"
+            _log(log_line)
 
-        win.after(150, _apply_modal_icon)
+        # Try immediately, then re-apply at 50 ms (right after CTk's own
+        # setup), then once more at 500 ms in case CTk does a later
+        # deferred reset.
+        _apply_modal_icon("immediate")
+        win.after(50,  lambda: _apply_modal_icon("after-50ms"))
+        win.after(500, lambda: _apply_modal_icon("after-500ms"))
 
         label = ctk.CTkLabel(
             win, text="Startup log (copy / screenshot this to report bugs):",
