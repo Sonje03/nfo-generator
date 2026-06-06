@@ -2654,21 +2654,36 @@ class NFOApp(CTkDnD):
           * TVDB    — needs TVDB key.
         Each provider whose credentials are missing is silently skipped.
         """
-        # Use the title the user (or the previous fetch) put in the field as
-        # the search query, stripping any trailing "(YYYY)" we may have added.
-        title_raw = self.title_entry.get().strip()
-        if not title_raw:
-            messagebox.showerror(
-                "Include",
-                "No Title to search with — do a primary fetch first, "
-                "or type a title manually.",
-            )
-            return
-
+        # Pick the search query. Tricky bit: after a primary TMDB fetch on
+        # a TV episode the Title field holds the EPISODE name (e.g. "Le
+        # Royaume Sorcier"), which the other providers will never match
+        # against a series. So if a file is loaded, we re-derive the show
+        # name from the filename (same logic Auto-search uses) and ignore
+        # whatever's currently in the Title field. Only when there's no
+        # file loaded do we fall back to the Title field.
         import re as _re
-        m = _re.search(r"\s*\((\d{4})\)\s*$", title_raw)
-        year = m.group(1) if m else ""
-        title_for_search = _re.sub(r"\s*\(\d{4}\)\s*$", "", title_raw).strip()
+        title_for_search = ""
+        year = ""
+        if self.video_path:
+            derived_title, derived_year, _is_tv = resolve_title_year_from_path(
+                self.video_path,
+            )
+            title_for_search = derived_title
+            year = derived_year or ""
+
+        if not title_for_search:
+            title_raw = self.title_entry.get().strip()
+            if not title_raw:
+                messagebox.showerror(
+                    "Include",
+                    "Nothing to search with — load a file or type a "
+                    "title manually first.",
+                )
+                return
+            m = _re.search(r"\s*\((\d{4})\)\s*$", title_raw)
+            if m and not year:
+                year = m.group(1)
+            title_for_search = _re.sub(r"\s*\(\d{4}\)\s*$", "", title_raw).strip()
 
         primary = self.provider_var.get()
         language = self.tmdb_lang_var.get()
