@@ -1204,28 +1204,33 @@ class NFOApp(CTkDnD):
         win.title("Startup diagnostic")
         win.geometry("640x480")
         win.transient(self)
-        # CTkToplevel doesn't inherit the parent window's icon — apply it
-        # explicitly so the modal shows the app icon in its title bar and
-        # dock entry instead of the Tk feather default.
-        try:
-            if sys.platform == "win32":
-                ico = _resource_path("assets/icon.ico")
-                if ico.exists():
-                    win.iconbitmap(str(ico))
-            else:
-                # macOS / Linux — reuse the parent's PhotoImage if it was
-                # cached in `_apply_window_icon`, otherwise load fresh.
-                photo = getattr(self, "_icon_image", None)
-                if photo is None:
-                    import tkinter as _tk
-                    png = _resource_path("assets/icon.png")
-                    if png.exists():
-                        photo = _tk.PhotoImage(file=str(png))
-                        self._icon_image = photo
-                if photo is not None:
-                    win.iconphoto(False, photo)
-        except Exception:  # noqa: BLE001
-            pass  # cosmetic; never block the modal
+
+        # CTkToplevel calls its own internal setup right after __init__,
+        # which silently overwrites iconbitmap() / iconphoto() calls made
+        # in the same tick. We defer ours to the next idle cycle so they
+        # land on top of CTk's defaults. 150 ms is overkill on macOS and
+        # Linux but cheap, and on Windows it's the only timing that
+        # reliably gets the .ico into the title bar / taskbar.
+        def _apply_modal_icon() -> None:
+            try:
+                if sys.platform == "win32":
+                    ico = _resource_path("assets/icon.ico")
+                    if ico.exists():
+                        win.iconbitmap(str(ico))
+                else:
+                    photo = getattr(self, "_icon_image", None)
+                    if photo is None:
+                        import tkinter as _tk
+                        png = _resource_path("assets/icon.png")
+                        if png.exists():
+                            photo = _tk.PhotoImage(file=str(png))
+                            self._icon_image = photo
+                    if photo is not None:
+                        win.iconphoto(False, photo)
+            except Exception:  # noqa: BLE001
+                pass  # cosmetic; never block the modal
+
+        win.after(150, _apply_modal_icon)
 
         label = ctk.CTkLabel(
             win, text="Startup log (copy / screenshot this to report bugs):",
@@ -2746,7 +2751,18 @@ class NFOApp(CTkDnD):
 
     def _on_include_done(self,
                          results: list[tuple[str, object]]) -> None:
-        """Apply each secondary fetch's managed-label links into the form."""
+        """Apply each secondary fetch's managed-label links into the form.
+
+        Rows the provider owns (per its ``managed_labels``) are always
+        overwritten with the freshly-fetched URL. The previous behaviour
+        was to skip if the row already contained anything — that made
+        sense to preserve manual URLs, but broke the common case of
+        re-clicking Include on a new file: same series link was already
+        there from the previous run, so Include reported "no new links"
+        and the user got a confusing × Skipped status. If you typed a
+        URL manually and don't want it overwritten, just don't click
+        Include for that provider.
+        """
         ok: list[str] = []
         fail: list[str] = []
         for prov, res in results:
@@ -2763,23 +2779,22 @@ class NFOApp(CTkDnD):
                 url = links.get(label) or ""
                 if not url:
                     continue
-                # Only overwrite empty rows so the user doesn't lose URLs
-                # they manually typed in.
-                current = entry.get().strip()
-                if not current:
-                    entry.delete(0, "end")
-                    entry.insert(0, url)
-                    applied_any = True
+                entry.delete(0, "end")
+                entry.insert(0, url)
+                applied_any = True
             if applied_any:
                 ok.append(prov)
             else:
-                fail.append(f"{prov} (no new links)")
+                # Provider responded but had no links to give for the
+                # rows it owns — uncommon but possible (e.g. AniList
+                # didn't ship a MAL ID for this anime).
+                fail.append(f"{prov} (provider returned no links)")
 
         parts: list[str] = []
         if ok:
             parts.append(f"✓ Linked: {', '.join(ok)}")
         if fail:
-            parts.append(f"× Skipped: {', '.join(fail)}")
+            parts.append(f"× {', '.join(fail)}")
         self.tmdb_status.configure(text="  ".join(parts) or "Nothing to include.")
 
     def _run_tmdb(self, fn) -> None:
