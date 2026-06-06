@@ -1206,27 +1206,25 @@ class NFOApp(CTkDnD):
         win.transient(self)
 
         # CTkToplevel does its own deferred icon setup on Windows that
-        # wins over a single iconbitmap() call. We hit it three times at
-        # increasing delays so at least one of them lands AFTER whatever
-        # CTk is doing internally. Belt + suspenders + a third pair of
-        # suspenders.
-        def _apply_modal_icon(stage: str) -> None:
-            log_line = f"[modal-icon] {stage}: "
+        # wins over a single iconbitmap() call. We apply ours three times
+        # at increasing delays so at least one lands AFTER whatever CTk
+        # is doing internally. Belt + suspenders + a third pair of
+        # suspenders — when one of them sticks, the others are no-ops.
+        # Silent on success; only logs to the diagnostic when something
+        # actually goes wrong (file missing, exception), so the modal log
+        # doesn't get spammed every time you re-open it.
+        def _apply_modal_icon() -> None:
             try:
                 if sys.platform == "win32":
                     ico = _resource_path("assets/icon.ico")
                     if not ico.exists():
-                        log_line += f"icon.ico NOT FOUND at {ico}"
-                    else:
-                        # Try both APIs — iconbitmap is the standard one,
-                        # wm_iconbitmap is its alias but sometimes only one
-                        # of them sticks depending on the Tk build.
-                        win.iconbitmap(str(ico))
-                        try:
-                            win.wm_iconbitmap(str(ico))
-                        except Exception:  # noqa: BLE001
-                            pass
-                        log_line += f"applied iconbitmap({ico})"
+                        _log(f"[modal-icon] icon.ico not found at {ico}")
+                        return
+                    win.iconbitmap(str(ico))
+                    try:
+                        win.wm_iconbitmap(str(ico))
+                    except Exception:  # noqa: BLE001
+                        pass
                 else:
                     photo = getattr(self, "_icon_image", None)
                     if photo is None:
@@ -1237,19 +1235,12 @@ class NFOApp(CTkDnD):
                             self._icon_image = photo
                     if photo is not None:
                         win.iconphoto(False, photo)
-                        log_line += "applied iconphoto"
-                    else:
-                        log_line += "no icon.png found"
             except Exception as exc:  # noqa: BLE001
-                log_line += f"ERROR: {exc!r}"
-            _log(log_line)
+                _log(f"[modal-icon] failed: {exc!r}")
 
-        # Try immediately, then re-apply at 50 ms (right after CTk's own
-        # setup), then once more at 500 ms in case CTk does a later
-        # deferred reset.
-        _apply_modal_icon("immediate")
-        win.after(50,  lambda: _apply_modal_icon("after-50ms"))
-        win.after(500, lambda: _apply_modal_icon("after-500ms"))
+        _apply_modal_icon()
+        win.after(50,  _apply_modal_icon)
+        win.after(500, _apply_modal_icon)
 
         label = ctk.CTkLabel(
             win, text="Startup log (copy / screenshot this to report bugs):",
